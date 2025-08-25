@@ -1,6 +1,6 @@
+# src/cli.py
 import click
-from src.dataset import load_amazon_dataset
-from src.train_eval import train_model, predict
+from train import train_model
 
 @click.group()
 def cli():
@@ -8,20 +8,17 @@ def cli():
     pass
 
 @cli.command()
-@click.option('--train', default='data/train.csv', help='Path to training CSV')
-@click.option('--test', default='data/test.csv', help='Path to test CSV')
-def train(train, test):
-    """Train model on Amazon dataset"""
-    train_df, test_df = load_amazon_dataset(train, test)
-    train_model(train_df, test_df)
-
-@cli.command()
-@click.option('--text', prompt='Enter a review text')
-def infer(text):
-    """Run inference on a single review"""
-    label = predict(text)
-    click.echo(f"Prediction: {'Fake' if label==1 else 'Genuine'}")
+@click.option('--train', default='data/train.csv', help='Path to training CSV file')
+@click.option('--test', default='data/test.csv', help='Path to testing CSV file')
+@click.option('--epochs', default=3, help='Number of training epochs')
+@click.option('--batch-size', default=16, help='Batch size for training')
+@click.option('--lr', default=2e-5, help='Learning rate')
+def train(train, test, epochs, batch_size, lr):
+    """
+    Train and evaluate the Fake Review Detection model.
+    """
+    print(f"Training on {train} and testing on {test}")
+    train_model(train, test, epochs=epochs, batch_size=batch_size, lr=lr)
 
 if __name__ == "__main__":
     cli()
-
