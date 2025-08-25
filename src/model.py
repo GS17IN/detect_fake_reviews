@@ -1,54 +1,30 @@
-
 # src/model.py
 import torch
-from torch import nn
-from transformers import AutoModel
+import torch.nn as nn
+from transformers import BertModel
 
 class FusionClassifier(nn.Module):
-    """Fusion model that concatenates BERT CLS embedding with metadata/aspect MLP.
-
-    Architecture:
-      - BERT encoder (AutoModel)
-      - meta_mlp: projects metadata vector to a smaller hidden vector
-      - classifier: MLP over [CLS || meta_h] -> logits (2 classes)
-    """
-    def __init__(self, model_name: str, meta_dim: int, hidden_meta: int = 64, dropout: float = 0.2):
-        super().__init__()
-        # load pretrained encoder
-        self.bert = AutoModel.from_pretrained(model_name)
+    def __init__(self, absa_dim=5, num_labels=2):
+        super(FusionClassifier, self).__init__()
+        self.bert = BertModel.from_pretrained("bert-base-uncased")
         hidden_size = self.bert.config.hidden_size
 
-        # small MLP for metadata/aspect features
-        self.meta_mlp = nn.Sequential(
-            nn.Linear(meta_dim, hidden_meta),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-        )
+        # Fusion: BERT [CLS] + ABSA features
+        self.fc = nn.Linear(hidden_size + absa_dim, 128)
+        self.dropout = nn.Dropout(0.3)
+        self.out = nn.Linear(128, num_labels)
 
-        # classification head over fused representation
-        self.classifier = nn.Sequential(
-            nn.Linear(hidden_size + hidden_meta, 128),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(128, 2)
-        )
+    def forward(self, input_ids, attention_mask, absa_features, labels=None):
+        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+        cls_emb = outputs.last_hidden_state[:, 0, :]  # CLS token
 
-    def forward(self, input_ids, attention_mask, token_type_ids=None, meta=None, labels=None):
-        # BERT forward
-        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
-        # CLS token embedding as sentence representation
-        cls = outputs.last_hidden_state[:, 0, :]
-
-        # project metadata
-        meta_h = self.meta_mlp(meta)
-
-        # fuse and classify
-        fused = torch.cat([cls, meta_h], dim=1)
-        logits = self.classifier(fused)
+        fused = torch.cat([cls_emb, absa_features], dim=1)
+        x = self.dropout(torch.relu(self.fc(fused)))
+        logits = self.out(x)
 
         loss = None
         if labels is not None:
-            loss_fct = nn.CrossEntropyLoss()
-            loss = loss_fct(logits, labels)
+            loss_fn = nn.CrossEntropyLoss()
+            loss = loss_fn(logits, labels)
 
         return {"loss": loss, "logits": logits}
